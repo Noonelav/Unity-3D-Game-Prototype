@@ -10,10 +10,21 @@ public class PlayerMovement : MonoBehaviour
 
     private CharacterController controller;
     private Vector3 velocity;
+    private Animator animator;
+    private Vector3 currentMovement;
+
+    // 动画参数名
+    private readonly string SPEED_PARAM = "Speed";
 
     void Awake()
     {
         controller = GetComponent<CharacterController>();
+        animator = GetComponent<Animator>();
+
+        if (animator == null)
+        {
+            Debug.LogWarning("PlayerMovement: Animator component not found on Player!");
+        }
     }
 
     void Update()
@@ -31,6 +42,7 @@ public class PlayerMovement : MonoBehaviour
         Vector3 move = new Vector3(horizontal, 0f, vertical);
         if (move.sqrMagnitude > 1f) move.Normalize();
 
+        currentMovement = move;
         controller.Move(move * moveSpeed * Time.deltaTime);
 
         // 简单重力
@@ -39,6 +51,20 @@ public class PlayerMovement : MonoBehaviour
 
         velocity.y += gravity * Time.deltaTime;
         controller.Move(velocity * Time.deltaTime);
+
+        // 更新Animator动画参数
+        UpdateAnimator();
+    }
+
+    void UpdateAnimator()
+    {
+        if (animator == null) return;
+
+        // 计算移动速度（0 = 静止，1 = 全速移动）
+        float speed = currentMovement.magnitude;
+
+        // 设置Animator的Speed参数用于动画过渡
+        animator.SetFloat(SPEED_PARAM, speed);
     }
 
     void HandleRotationToMouse()
