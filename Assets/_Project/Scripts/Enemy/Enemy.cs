@@ -21,20 +21,40 @@ public class Enemy : MonoBehaviour
     public float loseRange      = 14f;  // 超过此距离回到 Idle
 
     [Header("Attack")]
-    public float attackCooldown = 1.2f; // 两次攻击间隔（秒）
+    public float attackCooldown = 1.2f; // 两次近战攻击间隔（秒）
+
+    [Header("Ranged Attack")]
+    public float      shootRange    = 8f;    // 进入射击状态的距离
+    public float      shootCooldown = 1.5f;  // 射击间隔（秒）
+    public int        shootDamage   = 10;    // 子弹伤害
+    public float      bulletSpeed   = 18f;   // 子弹飞行速度
+    public GameObject enemyBulletPrefab;     // 拖入 EnemyBullet prefab
+    public Transform  firePoint;             // 枪口位置（可留空，自动用敌人中心+偏移）
 
     [Header("Death")]
     public float fallDuration  = 0.7f;  // 倒地动画时长（秒）
     public float corpseDuration = 60f;  // 尸体保留时间（秒）
 
+    [Header("跳跃/障碍处理")]
+    public float stepCheckDistance = 0.6f;  // 前方检测距离
+    public float jumpForce         = 7f;    // 跳跃初速度
+    public float jumpCooldown      = 0.5f;  // 跳跃冷却（秒）
+    public float stuckThreshold    = 0.2f;  // 多长时间没动算卡住
+
     // ──────────────────────────── 状态枚举 ────────────────────────────
-    public enum EnemyState { Idle, Chase, Attack, Dead }
+    public enum EnemyState { Idle, Chase, Shoot, Attack, Dead }
     public EnemyState CurrentState { get; private set; } = EnemyState.Idle;
 
     // ──────────────────────────── 内部变量 ────────────────────────────
     private int   currentHealth;
     private float lastAttackTime = -999f;
+    private float lastShootTime  = -999f;
     private float verticalVelocity = 0f;
+
+    // ── 卡死/跳跃检测 ──
+    private Vector3 lastPosition;
+    private float   stuckTimer = 0f;
+    private float   lastJumpTime = -999f;
 
     private Transform       playerTransform;
     private CharacterController controller;
@@ -74,6 +94,7 @@ public class Enemy : MonoBehaviour
         {
             case EnemyState.Idle:   UpdateIdle(dist);   break;
             case EnemyState.Chase:  UpdateChase(dist);  break;
+            case EnemyState.Shoot:  UpdateShoot(dist);  break;
             case EnemyState.Attack: UpdateAttack(dist); break;
         }
     }
@@ -93,14 +114,54 @@ public class Enemy : MonoBehaviour
             return;
         }
 
+        // 进入近战范围 → Attack
         if (dist <= attackRange)
         {
             TransitionTo(EnemyState.Attack);
             return;
         }
 
+        // 进入射击范围且有子弹Prefab → Shoot
+        if (dist <= shootRange && enemyBulletPrefab != null)
+        {
+            TransitionTo(EnemyState.Shoot);
+            return;
+        }
+
         MoveTowardsPlayer();
         FacePlayer();
+    }
+
+    void UpdateShoot(float dist)
+    {
+        FacePlayer();
+
+        // 玩家跑远 → Chase
+        if (dist > loseRange)
+        {
+            TransitionTo(EnemyState.Idle);
+            return;
+        }
+
+        // 玩家超出射击范围 → 继续追
+        if (dist > shootRange)
+        {
+            TransitionTo(EnemyState.Chase);
+            return;
+        }
+
+        // 玩家进入近战范围 → 近战
+        if (dist <= attackRange)
+        {
+            TransitionTo(EnemyState.Attack);
+            return;
+        }
+
+        // 站定射击
+        if (Time.time - lastShootTime >= shootCooldown)
+        {
+            PerformShoot();
+        }
     }
 
     void UpdateAttack(float dist)
@@ -126,7 +187,40 @@ public class Enemy : MonoBehaviour
         dir.y = 0f;
         dir.Normalize();
 
+        // 水平移动
         controller.Move(dir * moveSpeed * Time.deltaTime);
+
+        // ── 卡死/障碍检测：触发跳跃 ──
+        if (controller.isGrounded && Time.time - lastJumpTime > jumpCooldown)
+        {
+            // 检测前方有没有障碍
+            Vector3 footPos = transform.position + Vector3.up * 0.3f;
+            bool obstacle = Physics.Raycast(footPos, dir, stepCheckDistance, ~0, QueryTriggerInteraction.Ignore);
+
+            // 卡死计时
+            float movedDist = Vector3.Distance(
+                new Vector3(transform.position.x, 0, transform.position.z),
+                new Vector3(lastPosition.x, 0, lastPosition.z));
+            if (movedDist < 0.03f)
+                stuckTimer += Time.deltaTime;
+            else
+                stuckTimer = 0f;
+
+            // 触发跳跃：前方有障碍 或 卡住超过阈值
+            if (obstacle || stuckTimer >= stuckThreshold)
+            {
+                Jump();
+                stuckTimer = 0f;
+            }
+        }
+
+        lastPosition = transform.position;
+    }
+
+    void Jump()
+    {
+        verticalVelocity = jumpForce;
+        lastJumpTime = Time.time;
     }
 
     void FacePlayer()
@@ -153,12 +247,39 @@ public class Enemy : MonoBehaviour
     void PerformAttack()
     {
         lastAttackTime = Time.time;
-        Debug.Log($"[Enemy] 攻击玩家！伤害：{attackDamage}");
+        Debug.Log($"[Enemy] 近战攻击玩家！伤害：{attackDamage}");
 
         // 对玩家造成伤害
         PlayerHealth ph = playerTransform.GetComponent<PlayerHealth>();
         if (ph != null)
             ph.TakeDamage(attackDamage);
+    }
+
+    void PerformShoot()
+    {
+        lastShootTime = Time.time;
+
+        // 发射点：有 firePoint 用 firePoint，否则用自身位置 + 1m高度
+        Vector3 spawnPos = firePoint != null
+            ? firePoint.position
+            : transform.position + Vector3.up * 1.2f;
+
+        // 瞄准玩家胸口（+1m）
+        Vector3 targetPos = playerTransform.position + Vector3.up * 1f;
+        Vector3 dir = (targetPos - spawnPos).normalized;
+
+        GameObject bullet = Instantiate(enemyBulletPrefab, spawnPos, Quaternion.LookRotation(dir));
+
+        // 设置子弹伤害
+        EnemyBullet eb = bullet.GetComponent<EnemyBullet>();
+        if (eb != null) eb.damage = shootDamage;
+
+        // 给子弹施加速度
+        Rigidbody rb = bullet.GetComponent<Rigidbody>();
+        if (rb != null)
+            rb.linearVelocity = dir * bulletSpeed;
+
+        Debug.Log($"[Enemy] 射击！方向：{dir}");
     }
 
     void TransitionTo(EnemyState newState)
@@ -237,7 +358,11 @@ public class Enemy : MonoBehaviour
         Gizmos.color = Color.yellow;
         Gizmos.DrawWireSphere(transform.position, detectionRange);
 
-        // 红色 = 攻击范围
+        // 橙色 = 射击范围
+        Gizmos.color = new Color(1f, 0.5f, 0f);
+        Gizmos.DrawWireSphere(transform.position, shootRange);
+
+        // 红色 = 近战范围
         Gizmos.color = Color.red;
         Gizmos.DrawWireSphere(transform.position, attackRange);
 
