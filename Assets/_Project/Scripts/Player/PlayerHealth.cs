@@ -16,15 +16,15 @@ public class PlayerHealth : MonoBehaviour
 
     void Update()
     {
-     if (Input.GetKeyDown(KeyCode.K))
-     {
-        TakeDamage(10);   // 按 K 掉 10 血
-     }
+        if (Input.GetKeyDown(KeyCode.K))
+        {
+            TakeDamage(10);   // 按 K 掉 10 血
+        }
 
-     if (Input.GetKeyDown(KeyCode.H))
-     {
-        Heal(10);         // 按 H 回 10 血
-     }
+        if (Input.GetKeyDown(KeyCode.H))
+        {
+            Heal(10);         // 按 H 回 10 血
+        }
     }
 
 
@@ -57,6 +57,5 @@ public class PlayerHealth : MonoBehaviour
     void Die()
     {
         Debug.Log("Player Dead");
-        // 这里以后可以加死亡动画、重开场景等
     }
 }

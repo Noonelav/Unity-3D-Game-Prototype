@@ -37,6 +37,14 @@ public class CrosshairController : MonoBehaviour
     // ─────────────────────── 每帧更新 ────────────────────────────────
     void Update()
     {
+        // 如果光标可见（背包/搜索面板打开），隐藏准星 Canvas
+        bool uiOpen = Cursor.visible;
+        if (crosshairRoot != null && crosshairRoot.parent != null)
+        {
+            crosshairRoot.parent.gameObject.SetActive(!uiOpen);
+            if (uiOpen) return;
+        }
+
         // 准星跟随鼠标
         crosshairRoot.position = Input.mousePosition;
 

@@ -31,6 +31,9 @@ public class PlayerAimAndShoot : MonoBehaviour
     // ─────────────────────── 主循环 ──────────────────────────────────
     void Update()
     {
+        // UI 打开（光标可见）时禁止瞄准与射击
+        if (Cursor.visible) return;
+
         AimTowardsMouse();
         HandleShooting();
     }
